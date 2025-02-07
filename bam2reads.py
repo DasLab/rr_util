@@ -58,9 +58,9 @@ print( 'Read in %d reference sequences from %s' % (Nref,args.fasta) )
 
 chunk_size = args.chunk_size
 
-def update_out_files( out_tag,ref_idx, chunk_size, Nref, fid_index=None, fid_reads=None):
-    if fid_index is not None: fid_index.close()
-    if fid_reads is not None: fid_reads.close()
+def update_out_files( fids, out_tag,ref_idx, chunk_size, Nref ):
+    if len(fids)>0:
+        for fid in fids[-1]: fid.close()
     split_tag=''
     if chunk_size>0 and Nref>chunk_size:
         chunk_start = ref_idx+1
@@ -68,7 +68,18 @@ def update_out_files( out_tag,ref_idx, chunk_size, Nref, fid_index=None, fid_rea
         split_tag='.%07d_%07d' % (chunk_start,chunk_end)
     fid_index = open('%s%s.index.csv' % (out_tag,split_tag),'w')
     fid_reads = open('%s%s.reads.txt' % (out_tag,split_tag),'w')
-    return fid_index, fid_reads
+    print('fasta_idx,read_start,read_end,num_reads,header,sequence',file=fid_index)
+    fids.append( (fid_index, fid_reads) )
+
+
+def output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids ):
+    fid_index = fids[-1][0]
+    print(ref_idx+1,read_start,read_count-1,ref_headers[ref_idx],ref_sequences[ref_idx],sep=',',file=fid_index)
+    read_start = read_count
+    ref_idx += 1
+    if chunk_size>0 and (ref_idx+1) % chunk_size == 1:
+        update_out_files( fids, out_tag,ref_idx, chunk_size, Nref)
+    return ref_idx
 
 for bam in args.bam:
     out_tag = args.out_tag
@@ -80,40 +91,36 @@ for bam in args.bam:
 
     line = fid_bam.readline()
     read_count = 1
-    num_reads = 0
     ref_idx = 0 # where we are in sequence file
     header_old = ''
     read_start = 0
-    fid_index, fid_reads = update_out_files( out_tag,ref_idx, chunk_size, Nref)
+    fids = [] # outfiles
+    update_out_files( fids, out_tag,ref_idx, chunk_size, Nref)
+    fid_index, fid_reads = fids[-1]
 
-    print('fasta_idx,read_start,read_end,num_reads,header,sequence',file=fid_index)
     while line:
         (header,seq) = line.split()
         print(seq,file=fid_reads)
         if header != header_old:
-            #num_reads = read_end-read_start+1
             while ref_headers[ref_idx].split()[0] != header:
-                print(ref_idx+1,read_start,read_count-1,read_count-read_start, ref_headers[ref_idx],ref_sequences[ref_idx],sep=',',file=fid_index)
-                num_reads += read_count-read_start
-                read_start = read_count
-                ref_idx += 1
-                if chunk_size>0 and (ref_idx+1) % chunk_size == 1: # about to start the next chunk.
-                    fid_index, fid_reads = update_out_files( out_tag,ref_idx, chunk_size, Nref, fid_index, fid_reads)
-
+                ref_idx = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids )
             header_old = header
-
+            fid_index, fid_reads = fids[-1]
         line = fid_bam.readline() # check the next line
         read_count += 1
 
     # need to closeout index file.
     while ref_idx<Nref:
-        print(ref_idx+1,read_start,read_count-1,ref_headers[ref_idx],ref_sequences[ref_idx],sep=',',file=fid_index)
-        num_reads += read_count-read_start
-        read_start = read_count
-        ref_idx += 1
+        ref_idx = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids )
 
-    assert(num_reads==read_count)
-    fid_reads.close()
-    fid_index.close()
-    print('\nOutputted %d reads to %s' % (read_count,fid_reads.name) )
-    print('Outputted information for %d sequences with a total of %d reads to %s'  % (Nref,num_reads,fid_index.name) )
+    for fid in fids[-1]: fid.close()
+
+    if len(fids)==1:
+        fid_index_tag = fids[-1][0].name
+        fid_reads_tag = fids[-1][1].name
+    else:
+        fid_index_tag = '%d files [%s ... %s]' % ( len(fids),fids[0][0].name,fids[-1][0].name)
+        fid_reads_tag = '%d files [%s ... %s]' % ( len(fids),fids[0][1].name,fids[-1][1].name)
+
+    print('\nOutputted %d reads to %s' % (read_count,fid_reads_tag) )
+    print('Outputted information for %d reference sequences with a total of %d reads to %s'  % (Nref,read_count,fid_index_tag) )
