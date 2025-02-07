@@ -66,10 +66,11 @@ def update_out_files( fids, out_tag,ref_idx, chunk_size, Nref ):
         chunk_start = ref_idx+1
         chunk_end   = min( ref_idx + chunk_size, len(ref_headers))
         split_tag='.%07d_%07d' % (chunk_start,chunk_end)
-    fid_index = open('%s%s.index.csv' % (out_tag,split_tag),'w')
-    fid_reads = open('%s%s.reads.txt' % (out_tag,split_tag),'w')
-    print('ref_idx,read_start,read_end,num_reads,header,sequence',file=fid_index)
-    fids.append( (fid_index, fid_reads) )
+    if ref_idx < Nref-1:
+        fid_index = open('%s%s.index.csv' % (out_tag,split_tag),'w')
+        fid_reads = open('%s%s.reads.txt' % (out_tag,split_tag),'w')
+        print('ref_idx,read_start,read_end,num_reads,header,sequence',file=fid_index)
+        fids.append( (fid_index, fid_reads) )
 
 def csv_format(value):
     output = io.StringIO()
