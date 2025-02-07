@@ -77,16 +77,16 @@ def csv_format(value):
     writer.writerow([value])
     return output.getvalue().strip()  # Strip removes trailing newline
 
-
-def output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids, num_reads ):
+def output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids, total_reads ):
     fid_index = fids[-1][0]
     print(ref_idx+1,read_start,read_count-1,read_count-read_start,csv_format(ref_headers[ref_idx]),ref_sequences[ref_idx],sep=',',file=fid_index)
-    num_reads += read_count-read_start
-    read_start = read_count # on to the next ref sequence, record where we are in the reads
+    total_reads += read_count-read_start
     ref_idx += 1
     if chunk_size>0 and (ref_idx+1) % chunk_size == 1:
         update_out_files( fids, out_tag,ref_idx, chunk_size, Nref)
-    return ref_idx, read_start, num_reads
+        read_count = 1 # reset
+    read_start = read_count # on to the next ref sequence, record where we are in the reads
+    return ref_idx, read_start, read_count, total_reads
 
 for bam in args.bam:
     out_tag = args.out_tag
@@ -99,29 +99,29 @@ for bam in args.bam:
     line = fid_bam.readline()
     read_start = 1 # 1-indexed
     read_count = 1 # 1-indexed
-    num_reads = 0
-    ref_idx = 0 # where we are in sequence file, 0 indexed
-    header_old = ''
+    total_reads = 0
+    ref_idx = 0 # where we are in reference sequence file, 0 indexed
+    header = ''
     fids = [] # outfiles
     update_out_files( fids, out_tag,ref_idx, chunk_size, Nref)
     fid_index, fid_reads = fids[-1]
 
     while line:
-        (header,seq) = line.split()
-        print(seq,file=fid_reads)
-        if header != header_old:
-            while ref_headers[ref_idx].split()[0] != header:
-                ref_idx, read_start, num_reads = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids, num_reads )
-            header_old = header
+        (next_header,next_seq) = line.split()
+        if header == '': header = next_header
+        if header != next_header: # switching to a new set of reads
+            while ref_headers[ref_idx].split()[0] != next_header: #print index information for last set of reads until we reach next_header
+                ref_idx, read_start, read_count, total_reads = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids, total_reads )
+            header = next_header
             fid_index, fid_reads = fids[-1]
+        print(next_seq,file=fid_reads)
         line = fid_bam.readline() # check the next line
         read_count += 1
 
-    # need to closeout index file.
+    # need to close out index file.
     while ref_idx<Nref:
-        ref_idx, read_start, num_reads = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids, num_reads )
+        ref_idx, read_start, read_count, total_reads = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids, total_reads )
 
-    assert( num_reads == read_count-1 )
     for fid in fids[-1]: fid.close()
 
     if len(fids)==1:
@@ -131,5 +131,5 @@ for bam in args.bam:
         fid_index_tag = '%d files [%s ... %s]' % ( len(fids),fids[0][0].name,fids[-1][0].name)
         fid_reads_tag = '%d files [%s ... %s]' % ( len(fids),fids[0][1].name,fids[-1][1].name)
 
-    print('\nOutputted %d reads to %s' % (num_reads,fid_reads_tag) )
-    print('Outputted information for %d reference sequences with a total of %d reads to %s'  % (Nref,num_reads,fid_index_tag) )
+    print('\nOutputted %d reads to %s' % (total_reads,fid_reads_tag) )
+    print('Outputted information for %d reference sequences with a total of %d reads to %s'  % (Nref,total_reads,fid_index_tag) )
