@@ -24,9 +24,11 @@ df_all = []
 if True: # later will process files that have same name but across a bunch of subdirectories, like ubr_merge.py
 
     reads_files = args.reads_files
+    if len(reads_files)==1:
+        reads_files=sorted(glob.glob(reads_files[0]))
     out_tag = args.out_tag.replace('.reads.txt','')
 
-    for reads_file in args.reads_files:
+    for reads_file in reads_files:
         assert( reads_file.find('.reads.txt')>-1)
         index_file = reads_file.replace('.reads.txt','.index.csv')
         df_all.append( pd.read_csv( index_file ) )
@@ -44,7 +46,7 @@ if True: # later will process files that have same name but across a bunch of su
         if os.path.isfile(tmp_file): os.remove( tmp_file )
 
     # Now go through each input reads file, and output blocks that correspond to each reference sequence.
-    for (reads_file,df) in zip(args.reads_files, df_all):
+    for (reads_file,df) in zip(reads_files, df_all):
         fid_in = open(reads_file)
         num_reads_all=df['num_reads']
         num_reads_total=0
