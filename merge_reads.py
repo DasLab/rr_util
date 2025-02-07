@@ -70,12 +70,10 @@ if True: # later will process files that have same name but across a bunch of su
 
     # Now concatenate files above.
     fid_out = open(out_tag+'.reads.txt','w')
-    for tmp_file in tmp_files:
+    for (tmp_file,num_reads) in zip(tmp_files,df_out['num_reads']):
         fid_in = open( tmp_file )
-        line = fid_in.readline()
-        while line:
-            fid_out.write( line )
-            line = fid_in.readline()
+        for n in range( num_reads): fid_out.write( fid_in.readline() )
+        assert( not fid_in.readline() ) # hit end of file?
         fid_in.close()
     fid_out.close()
 
