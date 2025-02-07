@@ -3,9 +3,9 @@
 import argparse
 import os
 import time
+import csv
+import io
 import shutil
-import gzip
-import glob
 
 parser = argparse.ArgumentParser(
                     prog = 'bam2reads.py',
@@ -71,10 +71,16 @@ def update_out_files( fids, out_tag,ref_idx, chunk_size, Nref ):
     print('ref_idx,read_start,read_end,num_reads,header,sequence',file=fid_index)
     fids.append( (fid_index, fid_reads) )
 
+def csv_format(value):
+    output = io.StringIO()
+    writer = csv.writer(output, quoting=csv.QUOTE_ALL)
+    writer.writerow([value])
+    return output.getvalue().strip()  # Strip removes trailing newline
+
 
 def output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids ):
     fid_index = fids[-1][0]
-    print(ref_idx+1,read_start,read_count-1,read_count-read_start,'"'+ref_headers[ref_idx]+'"',ref_sequences[ref_idx],sep=',',file=fid_index)
+    print(ref_idx+1,read_start,read_count-1,read_count-read_start,csv_format(ref_headers[ref_idx]),ref_sequences[ref_idx],sep=',',file=fid_index)
     read_start = read_count # on to the next ref sequence, record where we are in the reads
     ref_idx += 1
     if chunk_size>0 and (ref_idx+1) % chunk_size == 1:
