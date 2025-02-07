@@ -68,18 +68,18 @@ def update_out_files( fids, out_tag,ref_idx, chunk_size, Nref ):
         split_tag='.%07d_%07d' % (chunk_start,chunk_end)
     fid_index = open('%s%s.index.csv' % (out_tag,split_tag),'w')
     fid_reads = open('%s%s.reads.txt' % (out_tag,split_tag),'w')
-    print('fasta_idx,read_start,read_end,num_reads,header,sequence',file=fid_index)
+    print('ref_idx,read_start,read_end,num_reads,header,sequence',file=fid_index)
     fids.append( (fid_index, fid_reads) )
 
 
 def output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids ):
     fid_index = fids[-1][0]
-    print(ref_idx+1,read_start,read_count-1,ref_headers[ref_idx],ref_sequences[ref_idx],sep=',',file=fid_index)
-    read_start = read_count
+    print(ref_idx+1,read_start,read_count-1,read_count-read_start,'"'+ref_headers[ref_idx]+'"',ref_sequences[ref_idx],sep=',',file=fid_index)
+    read_start = read_count # on to the next ref sequence, record where we are in the reads
     ref_idx += 1
     if chunk_size>0 and (ref_idx+1) % chunk_size == 1:
         update_out_files( fids, out_tag,ref_idx, chunk_size, Nref)
-    return ref_idx
+    return ref_idx, read_start
 
 for bam in args.bam:
     out_tag = args.out_tag
@@ -90,10 +90,10 @@ for bam in args.bam:
     fid_bam = os.popen( command )
 
     line = fid_bam.readline()
-    read_count = 1
-    ref_idx = 0 # where we are in sequence file
+    read_start = 1 # 1-indexed
+    read_count = 1 # 1-indexed
+    ref_idx = 0 # where we are in sequence file, 0 indexed
     header_old = ''
-    read_start = 0
     fids = [] # outfiles
     update_out_files( fids, out_tag,ref_idx, chunk_size, Nref)
     fid_index, fid_reads = fids[-1]
@@ -103,7 +103,7 @@ for bam in args.bam:
         print(seq,file=fid_reads)
         if header != header_old:
             while ref_headers[ref_idx].split()[0] != header:
-                ref_idx = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids )
+                ref_idx, read_start = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids )
             header_old = header
             fid_index, fid_reads = fids[-1]
         line = fid_bam.readline() # check the next line
@@ -111,7 +111,7 @@ for bam in args.bam:
 
     # need to closeout index file.
     while ref_idx<Nref:
-        ref_idx = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids )
+        ref_idx, read_start = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids )
 
     for fid in fids[-1]: fid.close()
 
