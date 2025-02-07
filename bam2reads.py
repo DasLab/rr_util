@@ -16,7 +16,7 @@ parser.add_argument('-b','--bam',nargs='*', required=True, help='bam files to pr
 parser.add_argument('-s','--fasta', type=str,required=True, help='FASTA of reference sequences used to align bam')
 parser.add_argument('-o','--out_tag',default='',help='tag used for tag.reads.txt and tags.index.csv')
 parser.add_argument('-mq','--map_quality',default=10,type=int,help=argparse.SUPPRESS )#help='minimum Bowtie2 MAPQ to consider read')
-parser.add_argument('-n','--num_seq_per_chunk', default=10000, type=int, help='number of sequences')
+parser.add_argument('-n','--chunk_size', default=0, type=int, help='split with this number of sequences per chunk')
 
 assert(shutil.which('samtools') )
 
@@ -52,14 +52,27 @@ for bam in args.bam:
     assert(os.path.isfile( bam ))
     assert(os.path.isfile( bam+'.bai' ))
 
-(fa_sequences, fa_headers) = read_fasta( args.fasta )
-print( 'Read in %d sequences from %s' % (len(fa_sequences),args.fasta) )
+(ref_sequences, ref_headers) = read_fasta( args.fasta )
+Nref = len(ref_sequences)
+print( 'Read in %d reference sequences from %s' % (Nref,args.fasta) )
+
+chunk_size = args.chunk_size
+
+def update_out_files( out_tag,ref_idx, chunk_size, Nref, fid_index=None, fid_reads=None):
+    if fid_index is not None: fid_index.close()
+    if fid_reads is not None: fid_reads.close()
+    split_tag=''
+    if chunk_size>0 and Nref>chunk_size:
+        chunk_start = ref_idx+1
+        chunk_end   = min( ref_idx + chunk_size, len(ref_headers))
+        split_tag='.%07d_%07d' % (chunk_start,chunk_end)
+    fid_index = open('%s%s.index.csv' % (out_tag,split_tag),'w')
+    fid_reads = open('%s%s.reads.txt' % (out_tag,split_tag),'w')
+    return fid_index, fid_reads
 
 for bam in args.bam:
     out_tag = args.out_tag
     if len(out_tag)==0: out_tag = bam.replace('.bam','')
-    fid_index = open('%s.index.csv' % out_tag,'w')
-    fid_reads = open('%s.reads.txt' % out_tag,'w')
 
     # rely on awk to handle lines quickly. MAPQ is field 5.
     command = "samtools view %s | awk '$5 >= %d {print $3,$10}'" % (bam,args.map_quality)
@@ -68,9 +81,10 @@ for bam in args.bam:
     line = fid_bam.readline()
     read_count = 1
     num_reads = 0
-    fa_idx = 0 # where we are in sequence file
+    ref_idx = 0 # where we are in sequence file
     header_old = ''
     read_start = 0
+    fid_index, fid_reads = update_out_files( out_tag,ref_idx, chunk_size, Nref)
 
     print('fasta_idx,read_start,read_end,num_reads,header,sequence',file=fid_index)
     while line:
@@ -78,27 +92,28 @@ for bam in args.bam:
         print(seq,file=fid_reads)
         if header != header_old:
             #num_reads = read_end-read_start+1
-            while fa_headers[fa_idx].split()[0] != header:
-                print(fa_idx+1,read_start,read_count-1,read_count-read_start, fa_headers[fa_idx],fa_sequences[fa_idx],sep=',',file=fid_index)
+            while ref_headers[ref_idx].split()[0] != header:
+                print(ref_idx+1,read_start,read_count-1,read_count-read_start, ref_headers[ref_idx],ref_sequences[ref_idx],sep=',',file=fid_index)
                 num_reads += read_count-read_start
                 read_start = read_count
-                fa_idx += 1
+                ref_idx += 1
+                if chunk_size>0 and (ref_idx+1) % chunk_size == 1: # about to start the next chunk.
+                    fid_index, fid_reads = update_out_files( out_tag,ref_idx, chunk_size, Nref, fid_index, fid_reads)
+
             header_old = header
-        else:
-            pass
 
         line = fid_bam.readline() # check the next line
         read_count += 1
 
     # need to closeout index file.
-    while fa_idx<len(fa_headers):
-        print(fa_idx+1,read_start,read_count-1,fa_headers[fa_idx],fa_sequences[fa_idx],sep=',',file=fid_index)
+    while ref_idx<Nref:
+        print(ref_idx+1,read_start,read_count-1,ref_headers[ref_idx],ref_sequences[ref_idx],sep=',',file=fid_index)
         num_reads += read_count-read_start
         read_start = read_count
-        fa_idx += 1
+        ref_idx += 1
 
     assert(num_reads==read_count)
     fid_reads.close()
     fid_index.close()
     print('\nOutputted %d reads to %s' % (read_count,fid_reads.name) )
-    print('Outputted information for %d sequences with a total of  %d reads to %s'  % (len(fa_headers),num_reads,fid_index.name) )
+    print('Outputted information for %d sequences with a total of %d reads to %s'  % (Nref,num_reads,fid_index.name) )
