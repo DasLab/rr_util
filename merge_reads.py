@@ -15,8 +15,9 @@ parser = argparse.ArgumentParser(
                     description = 'Takes reads files from bam2reads aligned to same sequences and merges in order.',
                     epilog = 'Input/output are .index.csv with 1-indexed start/end of reads for each ref sequence and .reads.txt')
 
-parser.add_argument('-i','--reads_files',nargs='*', required=True, help=argparse.SUPPRESS) # devel option
-parser.add_argument('-o','--out_tag',default='',help=argparse.SUPPRESS) # devel option
+parser.add_argument('-i','--reads_files',nargs='*', required=True, help='names of reads.txt files to merge')
+parser.add_argument('-o','--out_tag',default='',help='name of output reads.txt file')
+parser.add_argument('-v','--verbose',default='',help='output as each sequence is processed')
 
 args = parser.parse_args()
 
@@ -50,6 +51,7 @@ if True: # later will process files that have same name but across a bunch of su
         fid_in = open(reads_file)
         num_reads_all=df['num_reads']
         num_reads_total=0
+        if args.verbose: print( 'Doing file %s, %d out of %d files' % (reads_file,count,len(read_files)
         for (ref_idx,num_reads,tmp_file) in zip(df['ref_idx'],df['num_reads'],tmp_files):
             fid_out = open( tmp_file, 'a')
             for n in range(num_reads): fid_out.write( fid_in.readline() )
