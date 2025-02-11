@@ -198,6 +198,7 @@ for bam in args.bam:
     assert(os.path.isfile( bam+'.bai' ))
 
 (ref_sequences, ref_headers) = read_fasta( args.fasta )
+ref_sequences = [sequence.replace('U','T') for sequence in ref_sequences] # need to convert to DNA!
 Nref = len(ref_sequences)
 print( 'Read in %d reference sequences from %s' % (Nref,args.fasta) )
 
