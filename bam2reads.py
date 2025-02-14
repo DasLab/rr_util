@@ -85,9 +85,10 @@ def update_out_files( fids, out_tag,ref_idx, chunk_size, Nref ):
         split_tag='.%07d_%07d' % (chunk_start,chunk_end)
     if ref_idx < Nref-1:
         fid_index = open('%s%s.index.csv' % (out_tag,split_tag),'w')
-        fid_reads = open('%s%s.reads.txt' % (out_tag,split_tag),'w')
+        fid_raw_reads = open('%s%s.raw_reads.txt' % (out_tag,split_tag),'w')
+        fid_align_reads = open('%s%s.align_reads.txt' % (out_tag,split_tag),'w')
         print('ref_idx,read_start,read_end,num_reads,header,sequence',file=fid_index)
-        fids.append( (fid_index, fid_reads) )
+        fids.append( (fid_index, fid_raw_reads, fid_align_reads) )
 
 def csv_format(value):
     """Formats a value as a CSV string, quoting all fields.
@@ -139,6 +140,7 @@ def get_total_mutdel( cols, ref_sequence ):
 
     Returns:
         int: The total number of mutations and deletions.
+        seqa: aligned read
     """
     start_pos = int(cols[3])
     cigar = cols[5]
@@ -185,7 +187,7 @@ def get_total_mutdel( cols, ref_sequence ):
         if nt_pair[1] == '-': pos['del'].append(n)
         elif nt_pair[0] != nt_pair[1]: pos['mut'].append(n)
 
-    return len(pos['mut']) + len(pos['del'])
+    return len(pos['mut']) + len(pos['del']), seqa
 
 args = parser.parse_args()
 
@@ -224,7 +226,7 @@ for bam in args.bam:
 
     fids = [] # outfiles
     update_out_files( fids, out_tag,ref_idx, chunk_size, Nref)
-    fid_index, fid_reads = fids[-1]
+    fid_index, fid_raw_reads, fid_align_reads = fids[-1]
 
     while line:
         cols = line.split()
@@ -233,12 +235,15 @@ for bam in args.bam:
             while ref_headers[ref_idx].split()[0] != next_header: #print index information for last set of reads until we reach next_header
                 ref_idx, read_start, read_count, total_reads = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids, total_reads )
             header = next_header
-            fid_index, fid_reads = fids[-1]
+            fid_index, fid_raw_reads, fid_align_reads = fids[-1]
 
 
-        if args.mutdel_cutoff == 0 or get_total_mutdel( cols,ref_sequences[ref_idx] ) <= args.mutdel_cutoff:
+
+        total_mutdel, align_read = get_total_mutdel( cols,ref_sequences[ref_idx] )
+        if args.mutdel_cutoff == 0 or total_mutdel <= args.mutdel_cutoff:
             read = cols[9]
-            print(read,file=fid_reads)
+            print(read, file=fid_raw_reads)
+            print(align_read, file=fid_align_reads)
             read_count += 1
 
         line = fid_bam.readline() # check the next line
@@ -251,10 +256,13 @@ for bam in args.bam:
 
     if len(fids)==1:
         fid_index_tag = fids[-1][0].name
-        fid_reads_tag = fids[-1][1].name
+        fid_raw_reads_tag = fids[-1][1].name
+        fid_align_reads_tag = fids[-1][2].name
     else:
         fid_index_tag = '%d files [%s ... %s]' % ( len(fids),fids[0][0].name,fids[-1][0].name)
-        fid_reads_tag = '%d files [%s ... %s]' % ( len(fids),fids[0][1].name,fids[-1][1].name)
+        fid_raw_reads_tag = '%d files [%s ... %s]' % ( len(fids),fids[0][1].name,fids[-1][1].name)
+        fid_align_reads_tag = '%d files [%s ... %s]' % ( len(fids),fids[0][2].name,fids[-1][2].name)
 
-    print('\nOutputted %d reads to %s' % (total_reads,fid_reads_tag) )
+    print('\nOutputted %d raw reads to %s' % (total_reads,fid_raw_reads_tag) )
+    print('\nOutputted %d aligned reads to %s' % (total_reads,fid_raw_reads_tag) )
     print('Outputted information for %d reference sequences with a total of %d reads to %s'  % (Nref,total_reads,fid_index_tag) )
