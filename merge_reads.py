@@ -21,19 +21,30 @@ parser.add_argument('-v','--verbose',action="store_true",help='output as each se
 
 args = parser.parse_args()
 
+def parse_reads_file_name( reads_file ):
+    cols= reads_file.split('.')
+    readcol = next((i for (i,s) in enumerate(cols) if 'reads' in s), None)
+    if readcol is None: return cols,None,None,None
+    prefix = '.'.join(cols[:readcol])
+    suffix = '.'.join(cols[readcol:])
+    return cols,readcol,prefix,suffix
+
 df_all = []
 if True: # later will process files that have same name but across a bunch of subdirectories, like ubr_merge.py
 
     reads_files = []
     for read_file in args.reads_files: reads_files += sorted(glob.glob(read_file))
 
-    out_tag = args.out_tag.replace('.reads.txt','')
+    out_tag = args.out_tag
+    prefix = parse_reads_file_name(out_tag)[2]
+    if prefix is not None: out_tag = prefix
 
     if args.verbose: print("Collecting information from index.csv files")
     df0 = None
     for (count,reads_file) in enumerate(reads_files):
-        assert( reads_file.find('.reads.txt')>-1)
-        index_file = reads_file.replace('.reads.txt','.index.csv')
+        cols,readcol,prefix,suffix = parse_reads_file_name( reads_file )
+        assert( readcol is not None )
+        index_file = prefix + '.index.csv'
         if args.verbose: print( 'Doing file %s, %d out of %d files' % (index_file,count+1,len(reads_files)) )
         df_all.append( pd.read_csv( index_file, usecols=['num_reads','ref_idx'] ) )
         if count==0: df0 = pd.read_csv( index_file)
@@ -44,8 +55,9 @@ if True: # later will process files that have same name but across a bunch of su
     tmp_dir = tempfile.mkdtemp(dir="/tmp")  # Creates a unique directory in /tmp
     if args.verbose: print(f"Temporary directory created: {tmp_dir}")
     tmp_files = []
+    suffix = parse_reads_file_name( reads_files[0] )[3]
     for ref_idx in df0['ref_idx']: # cleanup old files
-        tmp_file = '%s/%d.reads.txt' % (tmp_dir,ref_idx)
+        tmp_file = '%s/%d.%s' % (tmp_dir,ref_idx,suffix)
         tmp_files.append(tmp_file)
 
     for tmp_file in tmp_files:
@@ -83,7 +95,7 @@ if True: # later will process files that have same name but across a bunch of su
     print('Outputted %d reads for %d sequences to %s' % (read_start-1,num_ref,index_file) )
 
     # Now concatenate files above.
-    fid_out = open(out_tag+'.reads.txt','w')
+    fid_out = open(out_tag+'.'+suffix,'w')
     for (count,(tmp_file,num_reads)) in enumerate(zip(tmp_files,df_out['num_reads'])):
         fid_in = open( tmp_file )
         if args.verbose and (count+1) % 1000 == 0: print( 'Concatenating %s, file %d out of %d' % (tmp_file, count+1, len(tmp_files)) )
