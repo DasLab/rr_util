@@ -6,6 +6,7 @@ import time
 import csv
 import io
 import shutil
+from read_util import *
 
 parser = argparse.ArgumentParser(
                     prog = 'bam2reads.py',
@@ -87,8 +88,9 @@ def update_out_files( fids, out_tag,ref_idx, chunk_size, Nref ):
         fid_index = open('%s%s.index.csv' % (out_tag,split_tag),'w')
         fid_raw_reads = open('%s%s.raw_reads.txt' % (out_tag,split_tag),'w')
         fid_align_reads = open('%s%s.align_reads.txt' % (out_tag,split_tag),'w')
+        fid_start_md = open('%s%s.start_md.txt' % (out_tag,split_tag),'w')
         print('ref_idx,read_start,read_end,num_reads,header,sequence',file=fid_index)
-        fids.append( (fid_index, fid_raw_reads, fid_align_reads) )
+        fids.append( (fid_index, fid_raw_reads, fid_align_reads, fid_start_md ) )
 
 def csv_format(value):
     """Formats a value as a CSV string, quoting all fields.
@@ -130,65 +132,6 @@ def output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences
     read_start = read_count+1 # on to the next ref sequence, record where we are in the reads
     return ref_idx, read_start, read_count, total_reads
 
-
-def get_total_mutdel( cols, ref_sequence ):
-    """Calculates the total number of mutations and deletions in a sequence alignment.
-
-    Args:
-        cols (list): A list of columns from an alignment file (format not specified).
-        ref_sequence (str): The reference sequence.
-
-    Returns:
-        int: The total number of mutations and deletions.
-        seqa: aligned read
-    """
-    start_pos = int(cols[3])
-    cigar = cols[5]
-    signed_tmpl_len = int(cols[8])
-    read=cols[9]
-    ref_sequence=ref_sequences[ref_idx]
-
-    #########################################
-    # create alignment output seqa for read.
-    #########################################
-    # parse cigar string, e.g., "22M1I23M1D69M" => "22M 1I 23M 1D 69M"
-    cpos = 0 # cigar position
-    spos = 0 # sequence position
-    seqa = ''
-    seqa += '.'*(start_pos-1)
-    for k,s in enumerate(cigar):
-        num = cigar[cpos:(k+1)]
-        if not num.isnumeric():
-            nres = int(cigar[cpos:k])
-            indelcode = cigar[k]
-            if indelcode == 'M':
-                seqa += read[spos:(spos+nres)]
-                spos += nres
-            elif indelcode == 'D':
-                seqa += '-'*nres
-                spos += 0
-            elif indelcode == 'I':
-                spos += nres
-            cpos = k+1 # advance to next chunk of cigar string
-    assert(len(seqa) <= len(ref_sequence))
-    end_pos = len(seqa)
-    if signed_tmpl_len < 0:
-        seqa = '.'*(len(ref_sequence)-len(seqa)) + seqa
-    else:
-        seqa = seqa + '.'*(len(ref_sequence)-len(seqa))
-    assert(len(seqa)==len(ref_sequence))
-
-    pos = {}
-    pos['mut'] = []
-    pos['del'] = []
-    for n,nt_pair in enumerate(zip(ref_sequence,seqa)):
-        if nt_pair[0] not in 'ACGT-': continue
-        if nt_pair[1] not in 'ACGT-': continue
-        if nt_pair[1] == '-': pos['del'].append(n)
-        elif nt_pair[0] != nt_pair[1]: pos['mut'].append(n)
-
-    return len(pos['mut']) + len(pos['del']), seqa
-
 args = parser.parse_args()
 
 if len(args.bam)>1 and len(args.out_tag)>1:
@@ -205,14 +148,13 @@ Nref = len(ref_sequences)
 print( 'Read in %d reference sequences from %s' % (Nref,args.fasta) )
 
 chunk_size = args.chunk_size
-
+md_idx = -1
 
 for bam in args.bam:
     out_tag = args.out_tag
     if len(out_tag)==0: out_tag = bam.replace('.bam','')
 
     # rely on awk to handle lines quickly. MAPQ is field 5.
-    #command = "samtools view %s | awk '$5 >= %d {print $3,$10}'" % (bam,args.map_quality)
     command = "samtools view %s | awk '$5 >= %d'" % (bam,args.map_quality)
     fid_bam = os.popen( command )
 
@@ -226,7 +168,7 @@ for bam in args.bam:
 
     fids = [] # outfiles
     update_out_files( fids, out_tag,ref_idx, chunk_size, Nref)
-    fid_index, fid_raw_reads, fid_align_reads = fids[-1]
+    fid_index, fid_raw_reads, fid_align_reads, fid_start_md = fids[-1]
 
     while line:
         cols = line.split()
@@ -235,15 +177,17 @@ for bam in args.bam:
             while ref_headers[ref_idx].split()[0] != next_header: #print index information for last set of reads until we reach next_header
                 ref_idx, read_start, read_count, total_reads = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids, total_reads )
             header = next_header
-            fid_index, fid_raw_reads, fid_align_reads = fids[-1]
+            fid_index, fid_raw_reads, fid_align_reads, fid_start_md = fids[-1]
 
-
-
-        total_mutdel, align_read = get_total_mutdel( cols,ref_sequences[ref_idx] )
+        ref_seq = ref_sequences[ref_idx]
+        total_mutdel, align_read = get_total_mutdel( cols,ref_seq )
         if args.mutdel_cutoff == 0 or total_mutdel <= args.mutdel_cutoff:
+            start_md = get_md_convert( cols,ref_seq )
+            #check_md_convert( start_md, ref_seq, align_read )
             read = cols[9]
             print(read, file=fid_raw_reads)
             print(align_read, file=fid_align_reads)
+            print(','.join(start_md), file=fid_start_md)
             read_count += 1
 
         line = fid_bam.readline() # check the next line
@@ -258,11 +202,14 @@ for bam in args.bam:
         fid_index_tag = fids[-1][0].name
         fid_raw_reads_tag = fids[-1][1].name
         fid_align_reads_tag = fids[-1][2].name
+        fid_start_md_tag = fids[-1][3].name
     else:
         fid_index_tag = '%d files [%s ... %s]' % ( len(fids),fids[0][0].name,fids[-1][0].name)
         fid_raw_reads_tag = '%d files [%s ... %s]' % ( len(fids),fids[0][1].name,fids[-1][1].name)
         fid_align_reads_tag = '%d files [%s ... %s]' % ( len(fids),fids[0][2].name,fids[-1][2].name)
+        fid_start_md_tag = '%d files [%s ... %s]' % ( len(fids),fids[0][3].name,fids[-1][3].name)
 
     print('\nOutputted %d raw reads to %s' % (total_reads,fid_raw_reads_tag) )
-    print('\nOutputted %d aligned reads to %s' % (total_reads,fid_raw_reads_tag) )
+    print('Outputted %d aligned reads to %s' % (total_reads,fid_align_reads_tag) )
+    print('Outputted %d start/md to %s' % (total_reads,fid_start_md_tag) )
     print('Outputted information for %d reference sequences with a total of %d reads to %s'  % (Nref,total_reads,fid_index_tag) )
