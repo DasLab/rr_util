@@ -23,7 +23,7 @@ def get_total_mutdel( cols, ref_sequence ):
     cpos = 0 # cigar position
     spos = 0 # sequence position
     seqa = ''
-    seqa += '-'*(start_pos-1)
+    seqa += '.'*(start_pos-1)
     for k,s in enumerate(cigar):
         num = cigar[cpos:(k+1)]
         if not num.isnumeric():
@@ -43,7 +43,7 @@ def get_total_mutdel( cols, ref_sequence ):
     if signed_tmpl_len < 0:
         seqa = '.'*(len(ref_sequence)-len(seqa)) + seqa
     else:
-        seqa = seqa + '-'*(len(ref_sequence)-len(seqa))
+        seqa = seqa + '.'*(len(ref_sequence)-len(seqa))
     assert(len(seqa)==len(ref_sequence))
 
     pos = {}
@@ -178,7 +178,7 @@ def get_md_convert(cols,ref_seq):
 def check_md_convert( start_md, ref_seq, align_read ):
     start_pos,md_convert = start_md
     infer_align_read = get_align_read( int(start_pos), ref_seq,  md_convert )
-    if align_read != infer_align_read :
+    if align_read.replace('.','-') != infer_align_read :
         print( start_pos, md_convert)
         print( ref_seq, 'ref' )
         print( align_read,'align' )

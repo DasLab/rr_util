@@ -19,6 +19,7 @@ parser.add_argument('-o','--out_tag',default='',help='tag used for tag.reads.txt
 parser.add_argument('-mq','--map_quality',default=10,type=int,help=argparse.SUPPRESS )#help='minimum Bowtie2 MAPQ to consider read')
 parser.add_argument('--mutdel_cutoff',type=int,default=10,help='Filter for maximum number of mut/del in read (default 0 means no filter)' )
 parser.add_argument('-n','--chunk_size', default=0, type=int, help='split with this number of sequences per chunk')
+parser.add_argument('--check_md',action='store_true',help='Run check on md by inferring align_read' )
 
 assert(shutil.which('samtools') )
 
@@ -183,7 +184,7 @@ for bam in args.bam:
         total_mutdel, align_read = get_total_mutdel( cols,ref_seq )
         if args.mutdel_cutoff == 0 or total_mutdel <= args.mutdel_cutoff:
             start_md = get_md_convert( cols,ref_seq )
-            #check_md_convert( start_md, ref_seq, align_read )
+            if args.check_md: check_md_convert( start_md, ref_seq, align_read )
             read = cols[9]
             print(read, file=fid_raw_reads)
             print(align_read, file=fid_align_reads)
