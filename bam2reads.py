@@ -89,7 +89,7 @@ def update_out_files( fids, out_tag,ref_idx, chunk_size, Nref ):
         fid_index = open('%s%s.index.csv' % (out_tag,split_tag),'w')
         fid_raw_reads = open('%s%s.raw_reads.txt' % (out_tag,split_tag),'w')
         fid_align_reads = open('%s%s.align_reads.txt' % (out_tag,split_tag),'w')
-        fid_start_md = open('%s%s.start_md.txt' % (out_tag,split_tag),'w')
+        fid_start_md = open('%s%s.start_md_reads.txt' % (out_tag,split_tag),'w')
         print('ref_idx,read_start,read_end,num_reads,header,sequence',file=fid_index)
         fids.append( (fid_index, fid_raw_reads, fid_align_reads, fid_start_md ) )
 
