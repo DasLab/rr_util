@@ -13,7 +13,7 @@ parser = argparse.ArgumentParser(
                     description = 'Takes sorted bam file and produces reads file and index for ML modeling',
                     epilog = 'Outputs are .index.csv with 1-indexed start/end of reads for each ref sequence and .reads.txt')
 
-parser.add_argument('-b','--bam',nargs='*', required=True, help='bam files to process')
+parser.add_argument('-b','--bam','--cram',nargs='*', required=True, help='bam files to process')
 parser.add_argument('-s','--fasta', type=str,required=True, help='FASTA of reference sequences used to align bam')
 parser.add_argument('-o','--out_tag',default='',help='tag used for tag.reads.txt and tags.index.csv')
 parser.add_argument('-mq','--map_quality',default=10,type=int,help=argparse.SUPPRESS )#help='minimum Bowtie2 MAPQ to consider read')
@@ -139,7 +139,7 @@ if len(args.bam)>1 and len(args.out_tag)>1:
     print('With multiple bam files, cannot supply --out_tag. Rerun without --out_tag and output files will have tags based on .bam files')
 
 for bam in args.bam:
-    assert(bam.find('.bam')>-1)
+    assert(bam.find('.bam')>-1 or bam.find('.cram')>-1)
     assert(os.path.isfile( bam ))
     #assert(os.path.isfile( bam+'.bai' ))
 
@@ -153,7 +153,7 @@ md_idx = -1
 
 for bam in args.bam:
     out_tag = args.out_tag
-    if len(out_tag)==0: out_tag = bam.replace('.bam','')
+    if len(out_tag)==0: out_tag = bam.replace('.bam','').replace('.cram','')
 
     # rely on awk to handle lines quickly. MAPQ is field 5.
     command = "samtools view %s | awk '$5 >= %d'" % (bam,args.map_quality)
