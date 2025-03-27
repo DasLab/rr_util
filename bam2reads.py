@@ -19,6 +19,8 @@ parser.add_argument('-o','--out_tag',default='',help='tag used for tag.reads.txt
 parser.add_argument('-mq','--map_quality',default=10,type=int,help=argparse.SUPPRESS )#help='minimum Bowtie2 MAPQ to consider read')
 parser.add_argument('--mutdel_cutoff',type=int,default=10,help='Filter for maximum number of mut/del in read (default 0 means no filter)' )
 parser.add_argument('-n','--chunk_size', default=0, type=int, help='split with this number of sequences per chunk')
+parser.add_argument('--start_idx', default=0, type=int, help='only do the reference sequences from start_idx onwards [default all]')
+parser.add_argument('--end_idx', default=0, type=int, help='only do the reference sequences up to end_idx [default all]')
 parser.add_argument('--check_md',action='store_true',help='Run check on md by inferring align_read' )
 
 assert(shutil.which('samtools') )
@@ -62,7 +64,7 @@ def read_fasta( fasta_file ):
     return (sequences,headers)
 
 
-def update_out_files( fids, out_tag,ref_idx, chunk_size, Nref ):
+def update_out_files( fids, out_tag,ref_idx, chunk_size, Nref, start_idx, end_idx ):
     """Updates output files based on chunk size and reference index.
 
     This function closes previously opened files if any exist, and opens new files for writing
@@ -84,6 +86,12 @@ def update_out_files( fids, out_tag,ref_idx, chunk_size, Nref ):
     if chunk_size>0 and Nref>chunk_size:
         chunk_start = ref_idx+1
         chunk_end   = min( ref_idx + chunk_size, len(ref_headers))
+        split_tag='.%07d_%07d' % (chunk_start,chunk_end)
+    if start_idx>0:
+        assert( chunk_size == 0 )
+        chunk_start = start_idx
+        chunk_end = Nref
+        if end_idx > 0: chunk_end = end_idx
         split_tag='.%07d_%07d' % (chunk_start,chunk_end)
     if ref_idx < Nref-1:
         fid_index = open('%s%s.index.csv' % (out_tag,split_tag),'w')
@@ -107,7 +115,7 @@ def csv_format(value):
     writer.writerow([value])
     return output.getvalue().strip()  # Strip removes trailing newline
 
-def output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids, total_reads ):
+def output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids, total_reads, start_idx, end_idx ):
     """Writes data to the index file and handles chunk updates.
 
     Args:
@@ -124,11 +132,13 @@ def output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences
 
     """
     fid_index = fids[-1][0]
-    print(ref_idx+1,read_start,read_count,read_count-read_start+1,csv_format(ref_headers[ref_idx]),ref_sequences[ref_idx],sep=',',file=fid_index)
+    ok_start_end_idx = start_idx==0 or (ref_idx+1 >= start_idx and (end_idx==0 or ref_idx+1 <=end_idx) )
+    if ok_start_end_idx:
+        print(ref_idx+1,read_start,read_count,read_count-read_start+1,csv_format(ref_headers[ref_idx]),ref_sequences[ref_idx],sep=',',file=fid_index)
     total_reads += read_count-read_start+1
     ref_idx += 1
     if chunk_size>0 and (ref_idx+1) % chunk_size == 1:
-        update_out_files( fids, out_tag,ref_idx, chunk_size, Nref)
+        update_out_files( fids, out_tag,ref_idx, chunk_size, Nref, start_idx, end_idx)
         read_count = 0 # reset
     read_start = read_count+1 # on to the next ref sequence, record where we are in the reads
     return ref_idx, read_start, read_count, total_reads
@@ -148,7 +158,11 @@ ref_sequences = [sequence.replace('U','T') for sequence in ref_sequences] # need
 Nref = len(ref_sequences)
 print( 'Read in %d reference sequences from %s' % (Nref,args.fasta) )
 
+
 chunk_size = args.chunk_size
+start_idx = args.start_idx
+end_idx = args.end_idx
+assert( not( chunk_size>0 and start_idx>0) )
 md_idx = -1
 
 for bam in args.bam:
@@ -168,7 +182,7 @@ for bam in args.bam:
     header = cols[2]
 
     fids = [] # outfiles
-    update_out_files( fids, out_tag,ref_idx, chunk_size, Nref)
+    update_out_files( fids, out_tag,ref_idx, chunk_size, Nref, start_idx, end_idx)
     fid_index, fid_raw_reads, fid_align_reads, fid_start_md = fids[-1]
 
     while line:
@@ -176,26 +190,30 @@ for bam in args.bam:
         next_header = cols[2]
         if header != next_header: # switching to a new set of reads
             while ref_headers[ref_idx].split()[0] != next_header: #print index information for last set of reads until we reach next_header
-                ref_idx, read_start, read_count, total_reads = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids, total_reads )
+                ref_idx, read_start, read_count, total_reads = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids, total_reads, start_idx, end_idx )
             header = next_header
             fid_index, fid_raw_reads, fid_align_reads, fid_start_md = fids[-1]
 
-        ref_seq = ref_sequences[ref_idx]
-        total_mutdel, align_read = get_total_mutdel( cols,ref_seq )
-        if args.mutdel_cutoff == 0 or total_mutdel <= args.mutdel_cutoff:
-            start_md = get_md_convert( cols,ref_seq )
-            if args.check_md: check_md_convert( start_md, ref_seq, align_read )
-            read = cols[9]
-            print(read, file=fid_raw_reads)
-            print(align_read, file=fid_align_reads)
-            print(','.join(start_md), file=fid_start_md)
-            read_count += 1
+        ok_start = start_idx == 0 or ref_idx+1 >= start_idx
+        ok_end   = end_idx == 0 or ref_idx+1 <= end_idx
+
+        if ok_start and ok_end:
+            ref_seq = ref_sequences[ref_idx]
+            total_mutdel, align_read = get_total_mutdel( cols,ref_seq )
+            if args.mutdel_cutoff == 0 or total_mutdel <= args.mutdel_cutoff:
+                start_md = get_md_convert( cols,ref_seq )
+                if args.check_md: check_md_convert( start_md, ref_seq, align_read )
+                read = cols[9]
+                print(read, file=fid_raw_reads)
+                print(align_read, file=fid_align_reads)
+                print(','.join(start_md), file=fid_start_md)
+                read_count += 1
 
         line = fid_bam.readline() # check the next line
 
     # need to close out index file.
     while ref_idx<Nref:
-        ref_idx, read_start, read_count, total_reads = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids, total_reads )
+        ref_idx, read_start, read_count, total_reads = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids, total_reads, start_idx, end_idx )
 
     for fid in fids[-1]: fid.close()
 
