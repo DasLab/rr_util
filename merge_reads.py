@@ -48,6 +48,7 @@ if True: # later will process files that have same name but across a bunch of su
         if args.verbose: print( 'Doing file %s, %d out of %d files' % (index_file,count+1,len(reads_files)) )
         df_all.append( pd.read_csv( index_file, usecols=['num_reads','ref_idx'] ) )
         if count==0: df0 = pd.read_csv( index_file)
+        #print(reads_file,len(df_all[-1]))
 
     num_ref = len(df0)
     for df in df_all: assert( len(df) == num_ref )
