@@ -1,59 +1,62 @@
 import re
 
-def get_total_mutdel( cols, ref_sequence ):
-    """Calculates the total number of mutations and deletions in a sequence alignment.
+def get_total_mutdel(cols, ref_sequence):
+    """
+    Calculates the total number of mutations and deletions in a sequence alignment.
 
     Args:
-        cols (list): A list of columns from an alignment file (format not specified).
+        cols (list): A list of columns from a SAM file.
         ref_sequence (str): The reference sequence.
 
     Returns:
-        int: The total number of mutations and deletions.
-        seqa: aligned read
+        tuple: (int: total mutations + deletions, str: aligned read sequence)
     """
     start_pos = int(cols[3])
     cigar = cols[5]
     signed_tmpl_len = int(cols[8])
-    read=cols[9]
+    read = cols[9]
 
-    #########################################
-    # create alignment output seqa for read.
-    #########################################
-    # parse cigar string, e.g., "22M1I23M1D69M" => "22M 1I 23M 1D 69M"
-    cpos = 0 # cigar position
-    spos = 0 # sequence position
     seqa = ''
-    seqa += '.'*(start_pos-1)
-    for k,s in enumerate(cigar):
-        num = cigar[cpos:(k+1)]
-        if not num.isnumeric():
-            nres = int(cigar[cpos:k])
-            indelcode = cigar[k]
-            if indelcode == 'M':
-                seqa += read[spos:(spos+nres)]
-                spos += nres
-            elif indelcode == 'D':
-                seqa += '-'*nres
-                spos += 0
-            elif indelcode == 'I':
-                spos += nres
-            cpos = k+1 # advance to next chunk of cigar string
-    assert(len(seqa) <= len(ref_sequence))
-    end_pos = len(seqa)
-    if signed_tmpl_len < 0:
-        seqa = '.'*(len(ref_sequence)-len(seqa)) + seqa
-    else:
-        seqa = seqa + '.'*(len(ref_sequence)-len(seqa))
-    assert(len(seqa)==len(ref_sequence))
+    read_pos = 0  # position in read
+    seqa += '.' * (start_pos - 1)  # pad start
 
-    pos = {}
-    pos['mut'] = []
-    pos['del'] = []
-    for n,nt_pair in enumerate(zip(ref_sequence,seqa)):
-        if nt_pair[0] not in 'ACGT-': continue
-        if nt_pair[1] not in 'ACGT-': continue
-        if nt_pair[1] == '-': pos['del'].append(n)
-        elif nt_pair[0] != nt_pair[1]: pos['mut'].append(n)
+    # Parse CIGAR with regex: [('22', 'M'), ('1', 'I'), ...]
+    cigar_tuples = re.findall(r'(\d+)([MIDNSHP=X])', cigar)
+
+    for length_str, op in cigar_tuples:
+        length = int(length_str)
+        if op == 'M':  # match or mismatch
+            seqa += read[read_pos:read_pos + length]
+            read_pos += length
+        elif op == 'I':  # insertion to the reference — skip, not in alignment
+            read_pos += length
+        elif op == 'D':  # deletion from the reference — gap in read
+            seqa += '-' * length
+        elif op == 'S':  # soft clip — skip bases in read
+            read_pos += length
+        elif op == 'H':  # hard clip — ignore entirely
+            continue
+        elif op == 'N':  # skipped region — typically introns, same as D here
+            seqa += '-' * length
+        # P (padding) and others are rarely used; can be ignored or handled as needed
+
+    # Ensure full alignment length
+    if signed_tmpl_len < 0:
+        seqa = '.' * (len(ref_sequence) - len(seqa)) + seqa
+    else:
+        seqa = seqa + '.' * (len(ref_sequence) - len(seqa))
+
+    assert len(seqa) == len(ref_sequence)
+
+    # Compare to reference for mutations and deletions
+    pos = {'mut': [], 'del': []}
+    for n, (ref_nt, read_nt) in enumerate(zip(ref_sequence, seqa)):
+        if ref_nt not in 'ACGT-': continue
+        if read_nt not in 'ACGT-': continue
+        if read_nt == '-':
+            pos['del'].append(n)
+        elif ref_nt != read_nt:
+            pos['mut'].append(n)
 
     return len(pos['mut']) + len(pos['del']), seqa
 
