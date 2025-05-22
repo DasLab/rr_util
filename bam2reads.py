@@ -16,7 +16,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument('-b','--bam','--cram',nargs='*', required=True, help='bam files to process')
 parser.add_argument('-s','--fasta', type=str,required=True, help='FASTA of reference sequences used to align bam')
 parser.add_argument('-o','--out_tag',default='',help='tag used for tag.reads.txt and tags.index.csv')
-parser.add_argument('-mq','--map_quality',default=10,type=int,help=argparse.SUPPRESS )#help='minimum Bowtie2 MAPQ to consider read')
+parser.add_argument('-mq','--map_quality',default=10,type=int,help='minimum Bowtie2 MAPQ to consider read')
 parser.add_argument('--mutdel_cutoff',type=int,default=10,help='Filter for maximum number of mut/del in read (default 0 means no filter)' )
 parser.add_argument('-n','--chunk_size', default=0, type=int, help='split with this number of sequences per chunk')
 parser.add_argument('--start_idx', default=0, type=int, help='only do the reference sequences from start_idx onwards [default all]')
