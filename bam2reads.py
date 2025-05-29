@@ -158,19 +158,28 @@ ref_sequences = [sequence.replace('U','T') for sequence in ref_sequences] # need
 Nref = len(ref_sequences)
 print( 'Read in %d reference sequences from %s' % (Nref,args.fasta) )
 
-
 chunk_size = args.chunk_size
 start_idx = args.start_idx
 end_idx = args.end_idx
 assert( not( chunk_size>0 and start_idx>0) )
 md_idx = -1
 
+regions_tag = ''
+if start_idx>0:
+    split_tag='.%07d_%07d' % (start_idx,end_idx)
+    regions_file = args.fasta + split_tag + '.bed'
+    fid_regions = open(regions_file,'w')
+    for i in range(start_idx-1,end_idx):
+        fid_regions.write('%s %d %d\n' % (ref_headers[i].split()[0],0,len(ref_sequences[i]) ) )
+    fid_regions.close()
+    regions_tag = f' --regions-file {regions_file}'
+
 for bam in args.bam:
     out_tag = args.out_tag
     if len(out_tag)==0: out_tag = bam.replace('.bam','').replace('.cram','')
 
     # rely on awk to handle lines quickly. MAPQ is field 5.
-    command = "samtools view %s | awk '$5 >= %d'" % (bam,args.map_quality)
+    command = "samtools view %s %s| awk '$5 >= %d'" % (bam,regions_tag,args.map_quality)
     fid_bam = os.popen( command )
 
     line = fid_bam.readline()
@@ -179,7 +188,7 @@ for bam in args.bam:
     read_start = 1 # 1-indexed
     total_reads = 0
     ref_idx = 0 # where we are in reference sequence file, 0 indexed
-    header = cols[2]
+    header = '' #force check of header!
 
     fids = [] # outfiles
     update_out_files( fids, out_tag,ref_idx, chunk_size, Nref, start_idx, end_idx)
@@ -193,7 +202,6 @@ for bam in args.bam:
                 ref_idx, read_start, read_count, total_reads = output_to_index( ref_idx, read_start, read_count, ref_headers, ref_sequences, fids, total_reads, start_idx, end_idx )
             header = next_header
             fid_index, fid_raw_reads, fid_align_reads, fid_start_md = fids[-1]
-
         ok_start = start_idx == 0 or ref_idx+1 >= start_idx
         ok_end   = end_idx == 0 or ref_idx+1 <= end_idx
 
@@ -232,3 +240,5 @@ for bam in args.bam:
     print('Outputted %d aligned reads to %s' % (total_reads,fid_align_reads_tag) )
     print('Outputted %d start/md to %s' % (total_reads,fid_start_md_tag) )
     print('Outputted information for %d reference sequences with a total of %d reads to %s'  % (Nref,total_reads,fid_index_tag) )
+
+if len(regions_tag)>0 and os.path.isfile( regions_file) : os.remove( regions_file )
