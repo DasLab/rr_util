@@ -16,8 +16,9 @@ parser = argparse.ArgumentParser(
 parser.add_argument('-b','--bam','--cram',nargs='*', required=True, help='bam files to process')
 parser.add_argument('-s','--fasta', type=str,required=True, help='FASTA of reference sequences used to align bam')
 parser.add_argument('-o','--out_tag',default='',help='tag used for tag.reads.txt and tags.index.csv')
-parser.add_argument('-mq','--map_quality',default=10,type=int,help='minimum Bowtie2 MAPQ to consider read')
-parser.add_argument('--mutdel_cutoff',type=int,default=10,help='Filter for maximum number of mut/del in read (default 0 means no filter)' )
+parser.add_argument('-mq','--map_quality',default=10,type=int,help='minimum Bowtie2 MAPQ to consider read (default 10)')
+parser.add_argument('--mutdel_cutoff',type=int,default=10,help='Filter for maximum number of mut/del in read (default 10; 0 means no filter)' )
+parser.add_argument('--trim_cutoff',type=int,default=50,help='Filter for maximum number of missing terminal residues (''trim'') in read (default 50; 0 means no filter)' )
 parser.add_argument('-n','--chunk_size', default=0, type=int, help='split with this number of sequences per chunk')
 parser.add_argument('--start_idx', default=0, type=int, help='only do the reference sequences from start_idx onwards [default all]')
 parser.add_argument('--end_idx', default=0, type=int, help='only do the reference sequences up to end_idx [default all]')
@@ -208,7 +209,9 @@ for bam in args.bam:
         if ok_start and ok_end:
             ref_seq = ref_sequences[ref_idx]
             total_mutdel, align_read = get_total_mutdel( cols,ref_seq )
-            if args.mutdel_cutoff == 0 or total_mutdel <= args.mutdel_cutoff:
+            total_trim = align_read.count('.')
+            if (args.mutdel_cutoff == 0 or total_mutdel <= args.mutdel_cutoff) and \
+               (args.trim_cutoff == 0 or total_trim <= args.trim_cutoff):
                 start_md = get_md_convert( cols,ref_seq )
                 if args.check_md: check_md_convert( start_md, ref_seq, align_read )
                 read = cols[9]
